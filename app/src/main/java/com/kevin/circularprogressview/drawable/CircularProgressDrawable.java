@@ -6,12 +6,19 @@ import android.graphics.Canvas;
 import android.graphics.ColorFilter;
 import android.graphics.Paint;
 import android.graphics.PixelFormat;
+import android.graphics.Rect;
+import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
+import android.os.SystemClock;
 import android.util.AttributeSet;
+import android.util.Log;
+import android.view.animation.AnimationUtils;
 import android.view.animation.DecelerateInterpolator;
 import android.view.animation.Interpolator;
 
 import com.kevin.circularprogressview.R;
+import com.kevin.circularprogressview.util.DimensionUtils;
+import com.kevin.circularprogressview.util.ViewUtil;
 
 /**
  * Created by XieJiaHua on 2016/2/22.
@@ -32,6 +39,101 @@ public class CircularProgressDrawable extends Drawable {
     private Interpolator mTransformInterpolator;
 
     private Paint mPaint;
+    private RectF mRect;
+
+    private float mStartAngle;
+    private float mSweepAngle;
+
+    private long mLastUpdateTime;
+    private long mLastProgressStateTime;
+    private ProgressState mProgressState = ProgressState.PROGRESS_HIDE;
+    private RunState mRunState = RunState.RUN_STATE_STOPPED;
+
+    enum ProgressState{
+        PROGRESS_HIDE,
+        PROGRESS_STRETCH,
+        PROGRESS_KEEP_STRETCH,
+        PROGRESS_SHRINK,
+        PROGRESS_KEEP_SHRINK
+    }
+
+    enum RunState{
+        RUN_STATE_STOPPED,
+        RUN_STATE_RUNNING
+    }
+
+    private Runnable mUpdate = new Runnable() {
+        @Override
+        public void run() {
+            if (!isRunning()) {
+                return;
+            }
+
+            long curTime = SystemClock.uptimeMillis();
+            float offset = (curTime - mLastUpdateTime) * 360f / mRotateDuration;
+
+
+            switch (mProgressState) {
+                case PROGRESS_HIDE:
+                    updateProgressState(ProgressState.PROGRESS_STRETCH);
+                    break;
+                case PROGRESS_STRETCH:
+                    mStartAngle += offset;
+
+                    if (mTransformDuration > 0) {
+                            //int sweepOffset = (curTime - mLastProgressStateTime) / mTransformDuration * mMaxSweepAngle;
+                        float value = (curTime - mLastProgressStateTime) /
+                                (float)mTransformDuration;
+                        mSweepAngle = (mTransformInterpolator.getInterpolation(value) * (mMaxSweepAngle - mMinSweepAngle)) + mMinSweepAngle;
+
+                        if (value > 1) {
+                            mSweepAngle = mMaxSweepAngle;
+                            updateProgressState(ProgressState.PROGRESS_KEEP_STRETCH);
+                        }
+                    }
+                    break;
+                case PROGRESS_KEEP_STRETCH:
+                    mStartAngle += offset;
+
+                    if (curTime - mLastProgressStateTime > mKeepDuration) {
+                        updateProgressState(ProgressState.PROGRESS_SHRINK);
+                    }
+                    break;
+                case PROGRESS_SHRINK:
+                    if (mTransformDuration > 0) {
+                        float value = (curTime - mLastProgressStateTime) / (float)mTransformDuration;
+                        float newSweepAngle = ((1f-mTransformInterpolator.getInterpolation(value)) * (mMaxSweepAngle - mMinSweepAngle)) + mMinSweepAngle;
+                        mStartAngle = mStartAngle + offset + (mSweepAngle - newSweepAngle);
+                        mSweepAngle = newSweepAngle;
+                        if (value > 1) {
+                            updateProgressState(ProgressState.PROGRESS_KEEP_SHRINK);
+                            mSweepAngle = mMinSweepAngle;
+                        }
+                    }
+                    break;
+                case PROGRESS_KEEP_SHRINK:
+                    mStartAngle += offset;
+
+                    if (curTime - mLastProgressStateTime > mKeepDuration) {
+                        updateProgressState(ProgressState.PROGRESS_STRETCH);
+                    }
+                    break;
+            }
+
+            mLastUpdateTime = curTime;
+            scheduleSelf(mUpdate, SystemClock.uptimeMillis() + ViewUtil.FRAME_DURATION);
+            invalidateSelf();
+        }
+    };
+
+    private void updateProgressState(ProgressState progressState) {
+        mProgressState = progressState;
+        mLastProgressStateTime = SystemClock.uptimeMillis();
+    }
+
+    public boolean isRunning() {
+        return mRunState != RunState.RUN_STATE_STOPPED;
+    }
 
     private CircularProgressDrawable(int padding,int minSweepAngle,int maxSweepAngle,int strokeSize,int strokeColor, int initialAngle,int rotateDuration,int transformDuration, int keepDuration, Interpolator transformInterpolator){
         mPadding = padding;
@@ -49,6 +151,23 @@ public class CircularProgressDrawable extends Drawable {
         mPaint.setAntiAlias(true);
         mPaint.setStrokeCap(Paint.Cap.ROUND);
         mPaint.setStrokeJoin(Paint.Join.ROUND);
+
+        mRect = new RectF();
+    }
+
+    public void start() {
+        mStartAngle = mInitialAngle;
+        mLastUpdateTime = SystemClock.uptimeMillis();
+        mSweepAngle = mMinSweepAngle;
+        //mProgressState = ProgressState.PROGRESS_ROTATE;
+        mRunState = RunState.RUN_STATE_RUNNING;
+        scheduleSelf(mUpdate, SystemClock.uptimeMillis() + ViewUtil.FRAME_DURATION);
+        invalidateSelf();
+    }
+
+    public void stop(){
+        //s
+
     }
 
 
@@ -58,6 +177,20 @@ public class CircularProgressDrawable extends Drawable {
     }
 
     private void drawIndeterminate(Canvas canvas) {
+        if (mProgressState != ProgressState.PROGRESS_HIDE) {
+            Rect bounds = getBounds();
+            float radius = (Math.min(bounds.width(),bounds.height())-mPadding*2-mStrokeSize)/2f;
+            float x = (bounds.left + bounds.right) / 2f;
+            float y = (bounds.top + bounds.bottom) / 2f;
+
+            mRect.set(x - radius, y - radius, x + radius, y + radius);
+
+            mPaint.setStrokeWidth(mStrokeSize);
+            mPaint.setStyle(Paint.Style.STROKE);
+            mPaint.setColor(mStrokeColor);
+
+            canvas.drawArc(mRect, mStartAngle, mSweepAngle, false, mPaint);
+        }
 
     }
 
@@ -93,11 +226,13 @@ public class CircularProgressDrawable extends Drawable {
         }
 
         public Build(Context context, int defStyleRes) {
-
+            this(context, null, 0, defStyleRes);
         }
 
         public Build(Context context, AttributeSet attrs, int defStyleAttr, int defStyleRes) {
             TypedArray a = context.obtainStyledAttributes(attrs, R.styleable.CircularProgressDrawable, defStyleAttr, defStyleRes);
+            int resId;
+
             setPadding(a.getDimensionPixelSize(R.styleable.CircularProgressDrawable_cpd_padding, 0));
             setMinSweepAngle(a.getInteger(R.styleable.CircularProgressDrawable_cpd_minSweepAngle, 1));
             setMaxSweepAngle(a.getInteger(R.styleable.CircularProgressDrawable_cpd_maxSweepAngle, 270));
@@ -105,6 +240,13 @@ public class CircularProgressDrawable extends Drawable {
             setKeepDuration(a.getInteger(R.styleable.CircularProgressDrawable_cpd_keepDuration, context.getResources().getInteger(android.R.integer.config_shortAnimTime)));
             setRotateDuration(a.getInteger(R.styleable.CircularProgressDrawable_cpd_rotateDuration, context.getResources().getInteger(android.R.integer.config_longAnimTime)));
             setTransformDuration(a.getInteger(R.styleable.CircularProgressDrawable_cpd_transformDuration, context.getResources().getInteger(android.R.integer.config_mediumAnimTime)));
+            if ((resId = a.getResourceId(R.styleable.CircularProgressDrawable_cpd_transformInterpolator, 0)) != 0) {
+                setTransformInterpolator(AnimationUtils.loadInterpolator(context, resId));
+            }
+            setStrokeSize(a.getDimensionPixelSize(R.styleable.CircularProgressDrawable_cpd_strokeSize, DimensionUtils.dpToPx(context, 4)));
+            setStrokeColor(a.getColor(R.styleable.CircularProgressDrawable_cpd_strokeColor, 0xFF000000));
+
+            a.recycle();
 
         }
 
@@ -169,7 +311,7 @@ public class CircularProgressDrawable extends Drawable {
             return this;
         }
 
-        public Build setmTransformInterpolator(Interpolator mTransformInterpolator) {
+        public Build setTransformInterpolator(Interpolator mTransformInterpolator) {
             this.mTransformInterpolator = mTransformInterpolator;
             return this;
         }

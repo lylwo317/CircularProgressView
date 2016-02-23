@@ -12,4 +12,6 @@
         <attr name="cpd_keepDuration" format="reference|integer"/>
         <attr name="cpd_transformInterpolator" format="reference"/>
     </declare-styleable>
+
+    <attr name="circularProgressViewStyle" format="reference"/>
 </resources>

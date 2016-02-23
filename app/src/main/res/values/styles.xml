@@ -6,6 +6,7 @@
         <item name="colorPrimary">@color/colorPrimary</item>
         <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
         <item name="colorAccent">@color/colorAccent</item>
+        <item name="circularProgressViewStyle">@style/Material.Drawable.CircularProgress</item>
     </style>
 
     <style name="Material"></style>
@@ -18,8 +19,7 @@
         <item name="cpd_maxSweepAngle">270</item>
         <item name="cpd_minSweepAngle">1</item>
         <item name="cpd_strokeSize">4dp</item>
-        <item name="cpd_strokeColor">?attr/colorPrimary</item>
-        <item name="cpd_strokeSecondaryColor">@android:color/transparent</item>
+        <item name="cpd_strokeColor">@color/colorPrimary</item>
         <item name="cpd_rotateDuration">1000</item>
         <item name="cpd_transformDuration">600</item>
         <item name="cpd_keepDuration">200</item>
